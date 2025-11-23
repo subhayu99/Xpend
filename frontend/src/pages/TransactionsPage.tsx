@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { transactionService, Transaction, TransactionCreate, TransactionFilters } from '../services/transactionService';
 import { accountService, Account } from '../services/accountService';
 import { categoryService, Category } from '../services/categoryService';
+import { transferService, PotentialTransfer } from '../services/transferService';
 import { EditTransactionModal } from '../components/EditTransactionModal';
 import { AddTransactionModal } from '../components/AddTransactionModal';
 
@@ -22,6 +23,11 @@ export const TransactionsPage: React.FC = () => {
   const [selectedAccount, setSelectedAccount] = useState<string>('');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  
+  // Transfer Detection State
+  const [potentialTransfers, setPotentialTransfers] = useState<PotentialTransfer[]>([]);
+  const [showTransfers, setShowTransfers] = useState(false);
+  const [detectingTransfers, setDetectingTransfers] = useState(false);
   
   // Filter State
   const [filters, setFilters] = useState<TransactionFilters>({
@@ -132,6 +138,39 @@ export const TransactionsPage: React.FC = () => {
     setEditingTransaction(null);
     loadData();
   };
+  
+  const handleDetectTransfers = async () => {
+    setDetectingTransfers(true);
+    try {
+      const detected = await transferService.detectPotential(2);
+      setPotentialTransfers(detected);
+      setShowTransfers(true);
+      if (detected.length === 0) {
+        alert('No potential transfers found!');
+      }
+    } catch (error) {
+      console.error('Failed to detect transfers:', error);
+      alert('Failed to detect transfers');
+    } finally {
+      setDetectingTransfers(false);
+    }
+  };
+  
+  const handleConfirmTransfer = async (transfer: PotentialTransfer) => {
+    try {
+      await transferService.createTransfer(
+        transfer.debit_transaction.id,
+        transfer.credit_transaction.id,
+        transfer.confidence_score
+      );
+      alert('Transfer linked successfully!');
+      loadData();
+      handleDetectTransfers(); // Refresh potential transfers
+    } catch (error) {
+      console.error('Failed to link transfer:', error);
+      alert('Failed to link transfer');
+    }
+  };
 
   if (loading) return <div className="p-8 text-center text-gray-500">Loading transactions...</div>;
 
@@ -143,12 +182,21 @@ export const TransactionsPage: React.FC = () => {
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Manage Transactions</h2>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium flex items-center gap-2"
-          >
-            <span>+</span> Add Transaction
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleDetectTransfers}
+              disabled={detectingTransfers}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-2 disabled:opacity-50"
+            >
+              🔄 {detectingTransfers ? 'Detecting...' : 'Detect Transfers'}
+            </button>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium flex items-center gap-2"
+            >
+              <span>+</span> Add Transaction
+            </button>
+          </div>
         </div>
         
         <div className="flex flex-wrap gap-4 items-end">
@@ -343,6 +391,65 @@ export const TransactionsPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+
+      {/* Potential Transfers */}
+      {showTransfers && potentialTransfers.length > 0 && (
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Potential Transfers ({potentialTransfers.length})
+            </h3>
+            <button
+              onClick={() => setShowTransfers(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="space-y-4">
+            {potentialTransfers.map((transfer, idx) => (
+              <div key={idx} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded">
+                        {(transfer.confidence_score * 100).toFixed(0)}% Match
+                      </span>
+                      <span className="text-sm text-gray-500">
+                        ₹{transfer.amount.toFixed(2)}
+                      </span>
+                      {transfer.date_diff_days > 0 && (
+                        <span className="text-xs text-gray-400">
+                          {transfer.date_diff_days} day(s) apart
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <div className="font-medium text-red-600">From (Debit)</div>
+                        <div className="text-gray-700">{transfer.debit_transaction.description}</div>
+                        <div className="text-gray-500 text-xs">{transfer.debit_transaction.date}</div>
+                      </div>
+                      <div>
+                        <div className="font-medium text-green-600">To (Credit)</div>
+                        <div className="text-gray-700">{transfer.credit_transaction.description}</div>
+                        <div className="text-gray-500 text-xs">{transfer.credit_transaction.date}</div>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleConfirmTransfer(transfer)}
+                    className="ml-4 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
+                  >
+                    Link as Transfer
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Transactions List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
