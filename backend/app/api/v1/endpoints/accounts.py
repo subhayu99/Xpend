@@ -94,12 +94,33 @@ def delete_account(
 ):
     """Delete an account (soft delete)"""
     account = AccountRepository.get_by_id(db, account_id, current_user.id)
-    
+
     if not account:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Account not found"
         )
-    
+
     AccountRepository.delete(db, account)
     return None
+
+@router.get("/{account_id}/balance-breakdown")
+def get_balance_breakdown(
+    account_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+):
+    """Get detailed balance breakdown for an account"""
+    account = AccountRepository.get_by_id(db, account_id, current_user.id)
+
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found"
+        )
+
+    breakdown = AccountRepository.get_balance_breakdown(db, account.id)
+    breakdown["account_name"] = account.name
+    breakdown["account_id"] = str(account.id)
+
+    return breakdown

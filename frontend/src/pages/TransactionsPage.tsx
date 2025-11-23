@@ -172,44 +172,19 @@ export const TransactionsPage: React.FC = () => {
     }
   };
   
-  const handleExportCSV = () => {
-    // Build query params from current filters
-    const params = new URLSearchParams();
-    if (filters.account_id) params.append('account_id', filters.account_id);
-    if (filters.category_id) params.append('category_id', filters.category_id);
-    if (filters.transaction_type) params.append('transaction_type', filters.transaction_type);
-    if (filters.start_date) params.append('start_date', filters.start_date);
-    if (filters.end_date) params.append('end_date', filters.end_date);
-    
-    // Get auth token
-    const token = localStorage.getItem('token');
-    
-    // Download file
-    const url = `${process.env.REACT_APP_API_URL}/api/v1/transactions/export/csv?${params.toString()}`;
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `transactions_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.display = 'none';
-    
-    // Add auth header via fetch
-    fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    })
-    .then(response => response.blob())
-    .then(blob => {
-      const blobUrl = window.URL.createObjectURL(blob);
-      link.href = blobUrl;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
-    })
-    .catch(error => {
+  const handleExportCSV = async () => {
+    try {
+      const { exportService } = await import('../services/exportService');
+      await exportService.exportTransactionsCSV({
+        account_id: filters.account_id,
+        category_id: filters.category_id,
+        start_date: filters.start_date,
+        end_date: filters.end_date,
+      });
+    } catch (error) {
       console.error('Export failed:', error);
       alert('Failed to export transactions');
-    });
+    }
   };
 
   if (loading) return <div className="p-8 text-center text-gray-500">Loading transactions...</div>;

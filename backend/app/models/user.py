@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from app.models.transaction import Transaction
     from app.models.category import Category
     from app.models.budget import Budget
+    from app.models.merchant import Merchant
 
 class User(SQLModel, table=True):
     """User model"""
@@ -24,8 +25,8 @@ class User(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
-    # Relationships (will be added as we create other models)
+    # Relationships
     accounts: list["Account"] = Relationship(back_populates="user")
     transactions: list["Transaction"] = Relationship(back_populates="user")
     categories: list["Category"] = Relationship(back_populates="user")
-    # budgets: list["Budget"] = Relationship(back_populates="user")
+    merchants: list["Merchant"] = Relationship(back_populates="user")

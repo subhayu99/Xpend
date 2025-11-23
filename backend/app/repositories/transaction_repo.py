@@ -383,3 +383,89 @@ class TransactionRepository:
         """Delete a transaction"""
         db.delete(transaction)
         db.commit()
+
+    @staticmethod
+    def apply_merchant_mapping(
+        db: Session,
+        user_id: uuid.UUID,
+        transaction: Transaction
+    ) -> Transaction:
+        """
+        Apply merchant normalization and auto-categorization to a transaction.
+        Uses the MerchantRepository to find matching mappings.
+        """
+        from app.repositories.merchant_repo import MerchantRepository
+        from app.utils.merchant_normalizer import MerchantNormalizer
+
+        if not transaction.description:
+            return transaction
+
+        # First, try to find an existing merchant mapping
+        match = MerchantRepository.find_match(db, user_id, transaction.description)
+
+        if match:
+            merchant, score, pattern = match
+            transaction.merchant_name = merchant.normalized_name
+
+            # Apply category if not already set and merchant has a default category
+            if not transaction.category_id and merchant.category_id:
+                transaction.category_id = merchant.category_id
+
+            # Increment usage count
+            MerchantRepository.increment_usage(db, merchant)
+        else:
+            # Use basic normalization if no mapping found
+            normalized = MerchantNormalizer.normalize(transaction.description)
+            if normalized:
+                transaction.merchant_name = normalized
+
+        db.add(transaction)
+        db.commit()
+        db.refresh(transaction)
+
+        return transaction
+
+    @staticmethod
+    def apply_merchant_mappings_bulk(
+        db: Session,
+        user_id: uuid.UUID,
+        transactions: List[Transaction]
+    ) -> int:
+        """
+        Apply merchant normalization and auto-categorization to multiple transactions.
+        Returns the number of transactions updated.
+        """
+        from app.repositories.merchant_repo import MerchantRepository
+        from app.utils.merchant_normalizer import MerchantNormalizer
+
+        updated_count = 0
+
+        for transaction in transactions:
+            if not transaction.description:
+                continue
+
+            # Try to find an existing merchant mapping
+            match = MerchantRepository.find_match(db, user_id, transaction.description)
+
+            if match:
+                merchant, score, pattern = match
+                transaction.merchant_name = merchant.normalized_name
+
+                # Apply category if not already set
+                if not transaction.category_id and merchant.category_id:
+                    transaction.category_id = merchant.category_id
+
+                updated_count += 1
+            else:
+                # Use basic normalization
+                normalized = MerchantNormalizer.normalize(transaction.description)
+                if normalized and normalized != transaction.merchant_name:
+                    transaction.merchant_name = normalized
+                    updated_count += 1
+
+            db.add(transaction)
+
+        if updated_count > 0:
+            db.commit()
+
+        return updated_count

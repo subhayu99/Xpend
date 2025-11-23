@@ -8,6 +8,7 @@ from app.models.transaction import Transaction
 from app.models.template import StatementTemplate
 from app.models.transfer import Transfer
 from app.models.budget import Budget
+from app.models.merchant import Merchant
 
 # Create engine
 engine = create_engine(

@@ -132,13 +132,29 @@ def create_transaction(
     db: Session = Depends(get_session)
 ):
     """Create a single transaction manually"""
+    from app.repositories.merchant_repo import MerchantRepository
+
     # Verify account belongs to user
     account = db.get(Account, transaction.account_id)
     if not account or account.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Account not found")
-    
+
     # Create transaction
     created = TransactionRepository.create(db, current_user.id, transaction)
+
+    # Apply merchant mapping if not already set
+    if not created.merchant_name and created.description:
+        match = MerchantRepository.find_match(db, current_user.id, created.description)
+        if match:
+            merchant, score, pattern = match
+            created.merchant_name = merchant.normalized_name
+            # Also apply category if not set
+            if not created.category_id and merchant.category_id:
+                created.category_id = merchant.category_id
+            db.add(created)
+            db.commit()
+            db.refresh(created)
+
     return created
 
 @router.get("", response_model=List[TransactionResponse])

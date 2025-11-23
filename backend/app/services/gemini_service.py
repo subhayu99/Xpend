@@ -141,4 +141,88 @@ Output ONLY valid JSON.
             print(f"Error calling Gemini: {e}")
             return {}
 
+    async def suggest_category(self, merchant_name: str, available_categories: List[str]) -> str:
+        """
+        Suggest a category for a merchant based on the merchant name.
+
+        Args:
+            merchant_name: The merchant name to categorize
+            available_categories: List of available category names
+
+        Returns:
+            Suggested category name or empty string if unable to suggest
+        """
+        if not available_categories:
+            return ""
+
+        categories_str = ", ".join(available_categories)
+
+        prompt = f"""
+You are a financial transaction categorizer. Based on the merchant name, suggest the most appropriate category.
+
+Merchant Name: {merchant_name}
+
+Available Categories: {categories_str}
+
+Respond with ONLY the category name (exactly as listed) that best fits this merchant.
+If no category fits well, respond with the most generic applicable category.
+
+Output ONLY the category name, nothing else.
+"""
+
+        contents = [
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_text(text=prompt),
+                ],
+            ),
+        ]
+
+        generate_content_config = types.GenerateContentConfig(
+            temperature=0.0,
+        )
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=contents,
+                config=generate_content_config,
+            )
+
+            if response.text:
+                suggested = response.text.strip()
+                # Validate that the suggestion is in our list
+                for cat in available_categories:
+                    if cat.lower() == suggested.lower():
+                        return cat
+                return suggested
+            return ""
+
+        except Exception as e:
+            print(f"Error calling Gemini for category suggestion: {e}")
+            return ""
+
+    def suggest_category_sync(self, merchant_name: str, available_categories: List[str]) -> str:
+        """Synchronous wrapper for suggest_category"""
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're already in an async context, run directly
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        asyncio.run,
+                        self.suggest_category(merchant_name, available_categories)
+                    )
+                    return future.result()
+            else:
+                return loop.run_until_complete(
+                    self.suggest_category(merchant_name, available_categories)
+                )
+        except Exception:
+            return ""
+
+
 gemini_service = GeminiService()

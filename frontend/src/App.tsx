@@ -8,6 +8,9 @@ import { CategoriesPage } from './pages/CategoriesPage';
 import { BudgetsPage } from './pages/BudgetsPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { MerchantsPage } from './pages/MerchantsPage';
+import { TransfersPage } from './pages/TransfersPage';
+import { RecurringPage } from './pages/RecurringPage';
 import { useAuthStore } from './store/authStore';
 
 import { Layout } from './components/Layout';
@@ -78,6 +81,30 @@ function App() {
           element={
             <ProtectedRoute>
               <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/merchants"
+          element={
+            <ProtectedRoute>
+              <MerchantsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/transfers"
+          element={
+            <ProtectedRoute>
+              <TransfersPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/recurring"
+          element={
+            <ProtectedRoute>
+              <RecurringPage />
             </ProtectedRoute>
           }
         />
