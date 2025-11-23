@@ -4,12 +4,14 @@ from app.db.session import get_session
 from app.api.dependencies import get_current_user
 from app.models.user import User
 from app.models.account import Account
+from app.models.category import Category
 from app.models.template import StatementTemplate
 from app.schemas.transaction import TransactionCreate, TransactionResponse
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.template_repo import TemplateRepository
 from app.services.statement_parser import StatementParserService
 from typing import List, Optional
+from datetime import datetime
 import uuid
 import json
 
@@ -198,3 +200,74 @@ def delete_transaction(
         raise HTTPException(status_code=404, detail="Transaction not found")
     TransactionRepository.delete(db, transaction)
     return None
+
+@router.get("/export/csv")
+def export_transactions_csv(
+    account_id: Optional[uuid.UUID] = None,
+    category_id: Optional[uuid.UUID] = None,
+    transaction_type: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+):
+    """Export transactions as CSV"""
+    from fastapi.responses import StreamingResponse
+    import io
+    import csv
+    
+    # Get filtered transactions
+    transactions = TransactionRepository.get_all(
+        db,
+        current_user.id,
+        skip=0,
+        limit=10000,  # Export all
+        account_id=account_id,
+        category_id=category_id,
+        transaction_type=transaction_type,
+        start_date=start_date,
+        end_date=end_date
+    )
+    
+    # Create CSV in memory
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Write header
+    writer.writerow([
+        'Date', 'Description', 'Merchant', 'Amount', 'Type', 
+        'Category', 'Account', 'Source File'
+    ])
+    
+    # Write data
+    for tx in transactions:
+        # Get category name
+        category_name = ''
+        if tx.category_id:
+            category = db.get(Category, tx.category_id)
+            category_name = category.name if category else ''
+        
+        # Get account name
+        account = db.get(Account, tx.account_id)
+        account_name = account.name if account else ''
+        
+        writer.writerow([
+            tx.transaction_date.strftime('%Y-%m-%d'),
+            tx.description,
+            tx.merchant_name or '',
+            tx.amount,
+            tx.transaction_type,
+            category_name,
+            account_name,
+            tx.source_file or ''
+        ])
+    
+    # Prepare response
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=transactions_{datetime.now().strftime('%Y%m%d')}.csv"
+        }
+    )
