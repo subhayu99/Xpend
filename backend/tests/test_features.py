@@ -393,6 +393,49 @@ def test_flow():
     else:
         print_error(f"Analytics: Top Merchants failed {resp.status_code}")
 
+    # 11. Settings Coverage
+    print_step("11. Settings Coverage")
+    
+    # 11.1 Get Profile
+    resp = requests.get(f"{BASE_URL}/settings/profile", headers=headers)
+    if resp.status_code == 200:
+        profile = resp.json()
+        if profile["email"] == EMAIL:
+            print_success("Settings: Get Profile working")
+        else:
+            print_error(f"Settings: Get Profile data mismatch. Got: {profile}")
+    else:
+        print_error(f"Settings: Get Profile failed {resp.status_code}")
+        
+    # 11.2 Update Profile
+    resp = requests.put(f"{BASE_URL}/settings/profile", json={
+        "name": "Updated Name",
+        "currency": "USD",
+        "timezone": "UTC"
+    }, headers=headers)
+    if resp.status_code == 200:
+        profile = resp.json()
+        if profile["name"] == "Updated Name" and profile["currency"] == "USD":
+            print_success("Settings: Update Profile working")
+        else:
+            print_error("Settings: Update Profile mismatch")
+    else:
+        print_error(f"Settings: Update Profile failed {resp.status_code}")
+        
+    # 11.3 Export Data
+    resp = requests.get(f"{BASE_URL}/settings/export/json", headers=headers)
+    if resp.status_code == 200:
+        try:
+            data = resp.json()
+            if "transactions" in data and "accounts" in data:
+                print_success(f"Settings: Export JSON working ({len(data['transactions'])} txs)")
+            else:
+                print_error("Settings: Export JSON missing keys")
+        except:
+            print_error("Settings: Export JSON invalid format")
+    else:
+        print_error(f"Settings: Export JSON failed {resp.status_code}")
+
 if __name__ == "__main__":
     try:
         test_flow()
