@@ -124,6 +124,22 @@ def save_parsing_template(
     return {"message": "Template saved"}
 
 # ... Keep existing CRUD endpoints ...
+@router.post("", response_model=TransactionResponse, status_code=status.HTTP_201_CREATED)
+def create_transaction(
+    transaction: TransactionCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+):
+    """Create a single transaction manually"""
+    # Verify account belongs to user
+    account = db.get(Account, transaction.account_id)
+    if not account or account.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    # Create transaction
+    created = TransactionRepository.create(db, current_user.id, transaction)
+    return created
+
 @router.get("", response_model=List[TransactionResponse])
 def get_transactions(
     skip: int = 0,
@@ -133,6 +149,27 @@ def get_transactions(
     db: Session = Depends(get_session)
 ):
     return TransactionRepository.get_all(db, current_user.id, skip, limit, account_id)
+
+@router.put("/{transaction_id}", response_model=TransactionResponse)
+def update_transaction(
+    transaction_id: uuid.UUID,
+    transaction_data: TransactionCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+):
+    """Update an existing transaction"""
+    transaction = TransactionRepository.get_by_id(db, transaction_id, current_user.id)
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    
+    # Update fields
+    for key, value in transaction_data.dict(exclude_unset=True).items():
+        setattr(transaction, key, value)
+    
+    db.add(transaction)
+    db.commit()
+    db.refresh(transaction)
+    return transaction
 
 @router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_transaction(

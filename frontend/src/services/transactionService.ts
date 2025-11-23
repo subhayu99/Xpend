@@ -36,6 +36,11 @@ export const transactionService = {
     return response.data;
   },
 
+  create: async (data: TransactionCreate): Promise<Transaction> => {
+    const response = await api.post('/transactions', data);
+    return response.data;
+  },
+
   createBulk: async (data: TransactionCreate[]): Promise<Transaction[]> => {
     const response = await api.post('/transactions/confirm', data); // Updated endpoint
     return response.data;

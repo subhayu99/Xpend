@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { transactionService, Transaction, TransactionCreate } from '../services/transactionService';
 import { accountService, Account } from '../services/accountService';
 import { EditTransactionModal } from '../components/EditTransactionModal';
+import { AddTransactionModal } from '../components/AddTransactionModal';
 
 export const TransactionsPage: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -18,6 +19,7 @@ export const TransactionsPage: React.FC = () => {
   
   const [selectedAccount, setSelectedAccount] = useState<string>('');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -118,7 +120,16 @@ export const TransactionsPage: React.FC = () => {
 
       {/* Upload Section */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-        <h2 className="text-lg font-semibold mb-4 text-gray-900">Upload Statement</h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Manage Transactions</h2>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium flex items-center gap-2"
+          >
+            <span>+</span> Add Transaction
+          </button>
+        </div>
+        
         <div className="flex flex-wrap gap-4 items-end">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm font-medium text-gray-700 mb-1">Select Account</label>
@@ -134,7 +145,7 @@ export const TransactionsPage: React.FC = () => {
             </select>
           </div>
           <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">File (CSV, Excel, PDF)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Upload Statement (CSV, Excel, PDF)</label>
             <input 
               type="file" 
               accept=".csv,.xlsx,.xls,.pdf"
@@ -296,6 +307,12 @@ export const TransactionsPage: React.FC = () => {
           onSave={handleUpdateSuccess}
         />
       )}
+      
+      <AddTransactionModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSuccess={loadData}
+      />
     </div>
   );
 };
