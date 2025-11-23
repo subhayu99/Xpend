@@ -6,6 +6,7 @@ import { AccountsPage } from './pages/AccountsPage';
 import { TransactionsPage } from './pages/TransactionsPage';
 import { CategoriesPage } from './pages/CategoriesPage';
 import { BudgetsPage } from './pages/BudgetsPage';
+import { AnalyticsPage } from './pages/AnalyticsPage';
 import { useAuthStore } from './store/authStore';
 
 import { Layout } from './components/Layout';
@@ -60,6 +61,14 @@ function App() {
           element={
             <ProtectedRoute>
               <BudgetsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/analytics"
+          element={
+            <ProtectedRoute>
+              <AnalyticsPage />
             </ProtectedRoute>
           }
         />

@@ -344,6 +344,55 @@ def test_flow():
     else:
         print_error(f"Dashboard: Stats failed {resp.status_code}")
 
+    # 10. Analytics Coverage
+    print_step("10. Analytics Coverage")
+    
+    # 10.1 Recurring Transactions
+    # We need to create some recurring transactions first
+    # Create 3 Netflix transactions
+    for i in range(3):
+        date = (datetime.now() - timedelta(days=30*i)).strftime("%Y-%m-%d")
+        requests.post(f"{BASE_URL}/transactions", json={
+            "account_id": acc1_id, "amount": -649, "description": "Netflix Subscription", 
+            "transaction_date": date, "transaction_type": "expense"
+        }, headers=headers)
+    
+    resp = requests.get(f"{BASE_URL}/analytics/recurring", headers=headers)
+    if resp.status_code == 200:
+        recurring = resp.json()
+        if len(recurring) > 0 and recurring[0]["merchant"] == "Netflix Subscription":
+            print_success("Analytics: Recurring detection working")
+        else:
+            print_error(f"Analytics: Recurring detection failed (found {len(recurring)})")
+    else:
+        print_error(f"Analytics: Recurring failed {resp.status_code}")
+        
+    # 10.2 Top Merchants
+    resp = requests.get(f"{BASE_URL}/analytics/top-merchants", headers=headers)
+    if resp.status_code == 200:
+        top = resp.json()
+        # We should see Netflix here
+        # Note: merchant_name might be null if not normalized, but our endpoint groups by merchant_name.
+        # If merchant_name is null, it won't show up in top merchants as per query filter.
+        # Let's check if we have any merchant names set.
+        # The manual entry doesn't set merchant_name automatically unless we pass it.
+        # Let's update the Netflix transactions to have merchant_name
+        # Actually, let's just create one with merchant name
+        requests.post(f"{BASE_URL}/transactions", json={
+            "account_id": acc1_id, "amount": -5000, "description": "Apple Store", 
+            "merchant_name": "Apple",
+            "transaction_date": datetime.now().strftime("%Y-%m-%d"), "transaction_type": "expense"
+        }, headers=headers)
+        
+        resp = requests.get(f"{BASE_URL}/analytics/top-merchants", headers=headers)
+        top = resp.json()
+        if len(top) > 0 and top[0]["merchant"] == "Apple":
+             print_success("Analytics: Top Merchants working")
+        else:
+             print_error(f"Analytics: Top Merchants failed (found {len(top)})")
+    else:
+        print_error(f"Analytics: Top Merchants failed {resp.status_code}")
+
 if __name__ == "__main__":
     try:
         test_flow()
