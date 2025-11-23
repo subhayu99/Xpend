@@ -359,11 +359,12 @@ def test_flow():
     
     resp = requests.get(f"{BASE_URL}/analytics/recurring", headers=headers)
     if resp.status_code == 200:
-        recurring = resp.json()
-        if len(recurring) > 0 and recurring[0]["merchant"] == "Netflix Subscription":
+        data = resp.json()
+        suggestions = data.get("suggestions", [])
+        if len(suggestions) > 0 and suggestions[0]["merchant"] == "Netflix Subscription":
             print_success("Analytics: Recurring detection working")
         else:
-            print_error(f"Analytics: Recurring detection failed (found {len(recurring)})")
+            print_error(f"Analytics: Recurring detection failed (found {len(suggestions)} suggestions)")
     else:
         print_error(f"Analytics: Recurring failed {resp.status_code}")
         

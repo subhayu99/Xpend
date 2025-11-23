@@ -46,7 +46,8 @@ export const AnalyticsPage: React.FC = () => {
         analyticsService.getMonthlyTrends(6),
         analyticsService.getSummary(selectedMonth, selectedYear)
       ]);
-      setRecurring(recurringData);
+      // Extract suggestions from the new response format
+      setRecurring(recurringData.suggestions || []);
       setTopMerchants(merchantsData);
       setCategorySpending(categoryData);
       setMonthlyTrends(trendsData);

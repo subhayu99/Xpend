@@ -1,24 +1,224 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlmodel import Session, select, func, desc
 from app.db.session import get_session
 from app.api.dependencies import get_current_user
 from app.models.user import User
 from app.models.transaction import Transaction
 from app.models.category import Category
+from app.models.recurring import RecurringRule, RecurringStatus, RecurringInterval
 from app.services.recurring_detection import RecurringDetectionService
+from app.schemas.recurring import (
+    RecurringSuggestion,
+    RecurringRuleResponse,
+    RecurringListResponse,
+    ConfirmRecurringRequest,
+    DismissRecurringRequest,
+)
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import calendar
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
-@router.get("/recurring", response_model=List[Dict[str, Any]])
+
+@router.get("/recurring")
 def get_recurring_transactions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session)
-):
-    """Detect potential recurring transactions (subscriptions, bills)"""
-    return RecurringDetectionService.detect_recurring(db, current_user.id)
+) -> RecurringListResponse:
+    """
+    Get recurring transactions with user verification status.
+    Returns AI suggestions merged with user-confirmed/dismissed rules.
+    """
+    # Get AI-detected suggestions
+    suggestions = RecurringDetectionService.detect_recurring(db, current_user.id)
+
+    # Get user's saved recurring rules
+    saved_rules = db.exec(
+        select(RecurringRule).where(RecurringRule.user_id == current_user.id)
+    ).all()
+
+    # Create lookup by merchant name
+    rules_by_merchant = {r.merchant_name: r for r in saved_rules}
+
+    # Merge suggestions with saved rules
+    merged_suggestions = []
+    for s in suggestions:
+        merchant = s['merchant']
+        existing_rule = rules_by_merchant.get(merchant)
+
+        suggestion = RecurringSuggestion(
+            merchant=merchant,
+            amount=s['amount'],
+            amount_min=s['amount_min'],
+            amount_max=s['amount_max'],
+            is_variable_amount=s['is_variable_amount'],
+            interval=s['interval'],
+            confidence=s['confidence'],
+            avg_days=s['avg_days'],
+            std_days=s['std_days'],
+            last_date=s['last_date'],
+            next_date=s['next_date'],
+            transaction_count=s['transaction_count'],
+            transaction_ids=s.get('transaction_ids', []),
+            transactions=s.get('transactions', []),
+            example_tx_id=s['example_tx_id'],
+            status=existing_rule.status if existing_rule else 'suggested',
+            existing_rule_id=existing_rule.id if existing_rule else None,
+            existing_rule_status=existing_rule.status if existing_rule else None,
+        )
+
+        # Only include suggestions that aren't dismissed
+        if not existing_rule or existing_rule.status != RecurringStatus.DISMISSED:
+            merged_suggestions.append(suggestion)
+
+    # Get confirmed rules (might include ones not in current suggestions)
+    confirmed_rules = [
+        RecurringRuleResponse.model_validate(r)
+        for r in saved_rules
+        if r.status == RecurringStatus.CONFIRMED
+    ]
+
+    # Count dismissed
+    dismissed_count = sum(1 for r in saved_rules if r.status == RecurringStatus.DISMISSED)
+
+    return RecurringListResponse(
+        suggestions=merged_suggestions,
+        confirmed=confirmed_rules,
+        dismissed_count=dismissed_count,
+    )
+
+
+@router.post("/recurring/confirm")
+def confirm_recurring(
+    request: ConfirmRecurringRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+) -> RecurringRuleResponse:
+    """Confirm a recurring suggestion as a valid recurring expense"""
+    # Check if rule already exists
+    existing = db.exec(
+        select(RecurringRule).where(
+            RecurringRule.user_id == current_user.id,
+            RecurringRule.merchant_name == request.merchant_name
+        )
+    ).first()
+
+    if existing:
+        # Update existing rule
+        existing.status = RecurringStatus.CONFIRMED
+        existing.expected_amount = request.expected_amount
+        existing.amount_min = request.amount_min
+        existing.amount_max = request.amount_max
+        existing.is_variable_amount = request.is_variable_amount
+        existing.interval = request.interval
+        existing.avg_days = request.avg_days
+        existing.confidence = request.confidence
+        existing.transaction_count = request.transaction_count
+        if request.last_transaction_date:
+            existing.last_transaction_date = datetime.fromisoformat(request.last_transaction_date)
+        if request.next_expected_date:
+            existing.next_expected_date = datetime.fromisoformat(request.next_expected_date)
+        if request.category_id:
+            existing.category_id = request.category_id
+        existing.updated_at = datetime.utcnow()
+        db.add(existing)
+        db.commit()
+        db.refresh(existing)
+        return RecurringRuleResponse.model_validate(existing)
+
+    # Create new rule
+    rule = RecurringRule(
+        user_id=current_user.id,
+        merchant_name=request.merchant_name,
+        expected_amount=request.expected_amount,
+        amount_min=request.amount_min,
+        amount_max=request.amount_max,
+        is_variable_amount=request.is_variable_amount,
+        interval=request.interval,
+        avg_days=request.avg_days,
+        confidence=request.confidence,
+        transaction_count=request.transaction_count,
+        status=RecurringStatus.CONFIRMED,
+        category_id=request.category_id,
+    )
+
+    if request.last_transaction_date:
+        rule.last_transaction_date = datetime.fromisoformat(request.last_transaction_date)
+    if request.next_expected_date:
+        rule.next_expected_date = datetime.fromisoformat(request.next_expected_date)
+
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+
+    return RecurringRuleResponse.model_validate(rule)
+
+
+@router.post("/recurring/dismiss")
+def dismiss_recurring(
+    request: DismissRecurringRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+) -> Dict[str, Any]:
+    """Dismiss a recurring suggestion (mark as not recurring)"""
+    # Check if rule already exists
+    existing = db.exec(
+        select(RecurringRule).where(
+            RecurringRule.user_id == current_user.id,
+            RecurringRule.merchant_name == request.merchant_name
+        )
+    ).first()
+
+    if existing:
+        existing.status = RecurringStatus.DISMISSED
+        existing.updated_at = datetime.utcnow()
+        db.add(existing)
+    else:
+        # Create a dismissed rule to remember the user's choice
+        rule = RecurringRule(
+            user_id=current_user.id,
+            merchant_name=request.merchant_name,
+            expected_amount=0,
+            interval=RecurringInterval.MONTHLY,  # Default, doesn't matter for dismissed
+            avg_days=30,
+            status=RecurringStatus.DISMISSED,
+        )
+        db.add(rule)
+
+    db.commit()
+
+    return {"message": f"Dismissed recurring suggestion for '{request.merchant_name}'"}
+
+
+@router.delete("/recurring/{rule_id}")
+def delete_recurring_rule(
+    rule_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+) -> Dict[str, Any]:
+    """Delete a recurring rule (resets to suggestion state)"""
+    import uuid as uuid_module
+    try:
+        rule_uuid = uuid_module.UUID(rule_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid rule ID")
+
+    rule = db.exec(
+        select(RecurringRule).where(
+            RecurringRule.id == rule_uuid,
+            RecurringRule.user_id == current_user.id
+        )
+    ).first()
+
+    if not rule:
+        raise HTTPException(status_code=404, detail="Recurring rule not found")
+
+    merchant_name = rule.merchant_name
+    db.delete(rule)
+    db.commit()
+
+    return {"message": f"Deleted recurring rule for '{merchant_name}'"}
 
 @router.get("/top-merchants", response_model=List[Dict[str, Any]])
 def get_top_merchants(
