@@ -8,6 +8,7 @@ from fastapi import UploadFile, HTTPException
 from pypdf import PdfReader
 from app.services.gemini_service import gemini_service
 from app.models.template import StatementTemplate
+from app.utils.merchant_normalizer import MerchantNormalizer
 
 class StatementParserService:
     """Service for parsing bank statements using templates or AI detection"""
@@ -153,12 +154,15 @@ class StatementParserService:
                         if pd.isna(tx_date) or pd.isna(description) or pd.isna(amount) or amount == 0:
                             continue
 
+                        # Extract and normalize merchant name
+                        merchant_name = MerchantNormalizer.extract_merchant_name(description)
+
                         transactions.append({
                             "transaction_date": tx_date.isoformat(),
                             "description": description,
                             "amount": amount,
                             "transaction_type": tx_type,
-                            "merchant_name": None # Can be enriched later
+                            "merchant_name": merchant_name
                         })
                     except Exception as e:
                         print(f"Skipping row due to error: {e}")
@@ -252,12 +256,15 @@ class StatementParserService:
                             
                         if amount == 0: continue
                         
+                        # Extract and normalize merchant name
+                        merchant_name = MerchantNormalizer.extract_merchant_name(description)
+                        
                         transactions.append({
                             "transaction_date": dt.isoformat(),
                             "description": description,
                             "amount": amount,
                             "transaction_type": "income" if amount > 0 else "expense",
-                            "merchant_name": None
+                            "merchant_name": merchant_name
                         })
                     except Exception as e:
                         print(f"Error parsing match: {e}")
@@ -333,12 +340,15 @@ class StatementParserService:
                 # Skip invalid or zero amounts
                 if amount == 0: continue
                 
+                # Extract and normalize merchant name
+                merchant_name = MerchantNormalizer.extract_merchant_name(description)
+                
                 transactions.append({
                     "transaction_date": dt.isoformat(),
                     "description": description,
                     "amount": amount,
                     "transaction_type": "income" if amount > 0 else "expense",
-                    "merchant_name": None
+                    "merchant_name": merchant_name
                 })
             except Exception as e:
                 # print(f"Skipping row: {e}")
