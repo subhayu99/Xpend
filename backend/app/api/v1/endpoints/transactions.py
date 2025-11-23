@@ -6,7 +6,7 @@ from app.models.user import User
 from app.models.account import Account
 from app.models.category import Category
 from app.models.template import StatementTemplate
-from app.schemas.transaction import TransactionCreate, TransactionResponse
+from app.schemas.transaction import TransactionCreate, TransactionResponse, TransactionUpdate
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.template_repo import TemplateRepository
 from app.services.statement_parser import StatementParserService
@@ -125,7 +125,6 @@ def save_parsing_template(
     print(f"Template created successfully!")
     return {"message": "Template saved"}
 
-# ... Keep existing CRUD endpoints ...
 @router.post("", response_model=TransactionResponse, status_code=status.HTTP_201_CREATED)
 def create_transaction(
     transaction: TransactionCreate,
@@ -168,10 +167,22 @@ def get_transactions(
         search
     )
 
+@router.get("/{transaction_id}", response_model=TransactionResponse)
+def get_transaction(
+    transaction_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+):
+    """Get a single transaction by ID"""
+    transaction = TransactionRepository.get_by_id(db, transaction_id, current_user.id)
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return transaction
+
 @router.put("/{transaction_id}", response_model=TransactionResponse)
 def update_transaction(
     transaction_id: uuid.UUID,
-    transaction_data: TransactionCreate,
+    transaction_data: TransactionUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session)
 ):
