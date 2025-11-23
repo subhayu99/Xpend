@@ -91,3 +91,67 @@ class MerchantMatch(BaseModel):
     category_id: Optional[uuid.UUID]
     match_score: float
     matched_pattern: Optional[str] = None
+
+
+class TransactionSummary(BaseModel):
+    """Summary of a transaction for grouping display"""
+    id: uuid.UUID
+    transaction_date: datetime
+    amount: float
+    description: str
+    account_id: uuid.UUID
+    account_name: Optional[str] = None
+
+
+class MerchantGroup(BaseModel):
+    """A group of transactions with the same merchant name (uncategorized)"""
+    merchant_name: str
+    transaction_count: int
+    total_amount: float
+    first_date: datetime
+    last_date: datetime
+    transactions: List[TransactionSummary] = []
+    sample_descriptions: List[str] = []
+
+
+class UncategorizedGroupsResponse(BaseModel):
+    """Response for uncategorized transactions grouped by merchant"""
+    groups: List[MerchantGroup]
+    total_groups: int
+    total_transactions: int
+
+
+class BulkCategorizeRequest(BaseModel):
+    """Request to categorize multiple merchants at once"""
+    merchant_name: str
+    category_id: uuid.UUID
+    create_mapping: bool = True  # Create a merchant mapping for future transactions
+    patterns: List[str] = []  # Additional patterns to match
+
+
+class BulkCategorizeResponse(BaseModel):
+    """Response for bulk categorization"""
+    transactions_updated: int
+    merchant_created: bool = False
+    merchant_id: Optional[uuid.UUID] = None
+
+
+class UnextractedAccountInfo(BaseModel):
+    """Info about an account with unextracted transactions"""
+    account_id: uuid.UUID
+    account_name: str
+    bank_name: Optional[str] = None
+    count: int
+
+
+class UnextractedAccountsResponse(BaseModel):
+    """Response for accounts with unextracted merchants"""
+    accounts: List[UnextractedAccountInfo]
+    total_unextracted: int
+
+
+class ExtractMerchantsResponse(BaseModel):
+    """Response for merchant extraction"""
+    transactions_updated: int
+    regex_used: Optional[str] = None
+    bank_name: Optional[str] = None

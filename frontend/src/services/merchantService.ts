@@ -78,6 +78,62 @@ export interface NormalizeResponse {
   } | null;
 }
 
+export interface TransactionSummary {
+  id: string;
+  transaction_date: string;
+  amount: number;
+  description: string;
+  account_id: string;
+  account_name: string | null;
+}
+
+export interface MerchantGroup {
+  merchant_name: string;
+  transaction_count: number;
+  total_amount: number;
+  first_date: string;
+  last_date: string;
+  transactions: TransactionSummary[];
+  sample_descriptions: string[];
+}
+
+export interface UncategorizedGroupsResponse {
+  groups: MerchantGroup[];
+  total_groups: number;
+  total_transactions: number;
+}
+
+export interface BulkCategorizeRequest {
+  merchant_name: string;
+  category_id: string;
+  create_mapping?: boolean;
+  patterns?: string[];
+}
+
+export interface BulkCategorizeResponse {
+  transactions_updated: number;
+  merchant_created: boolean;
+  merchant_id: string | null;
+}
+
+export interface UnextractedAccountInfo {
+  account_id: string;
+  account_name: string;
+  bank_name: string | null;
+  count: number;
+}
+
+export interface UnextractedAccountsResponse {
+  accounts: UnextractedAccountInfo[];
+  total_unextracted: number;
+}
+
+export interface ExtractMerchantsResponse {
+  transactions_updated: number;
+  regex_used: string | null;
+  bank_name: string | null;
+}
+
 export const merchantService = {
   getAll: async (params?: {
     page?: number;
@@ -146,6 +202,33 @@ export const merchantService = {
     const response = await api.post(`/merchants/${id}/apply`, null, {
       params: { update_category: updateCategory },
     });
+    return response.data;
+  },
+
+  getUncategorizedGroups: async (
+    includeTransactions: boolean = false,
+    limit: number = 100
+  ): Promise<UncategorizedGroupsResponse> => {
+    const response = await api.get('/merchants/uncategorized/groups', {
+      params: { include_transactions: includeTransactions, limit },
+    });
+    return response.data;
+  },
+
+  bulkCategorize: async (
+    request: BulkCategorizeRequest
+  ): Promise<BulkCategorizeResponse> => {
+    const response = await api.post('/merchants/uncategorized/categorize', request);
+    return response.data;
+  },
+
+  getUnextractedAccounts: async (): Promise<UnextractedAccountsResponse> => {
+    const response = await api.get('/merchants/extract/accounts');
+    return response.data;
+  },
+
+  extractMerchants: async (accountId: string): Promise<ExtractMerchantsResponse> => {
+    const response = await api.post(`/merchants/extract/${accountId}`);
     return response.data;
   },
 };

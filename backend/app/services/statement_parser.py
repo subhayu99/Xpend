@@ -357,74 +357,133 @@ class StatementParserService:
         return transactions
 
     @staticmethod
+    def _apply_ai_merchant_extraction(transactions: List[Dict[str, Any]], bank_name: str) -> tuple[List[Dict[str, Any]], Optional[str]]:
+        """
+        Use AI to generate a regex pattern for merchant extraction and apply it.
+
+        Args:
+            transactions: List of parsed transactions with descriptions
+            bank_name: Bank name for context
+
+        Returns:
+            Tuple of (updated transactions, regex pattern used or None)
+        """
+        if not transactions:
+            return transactions, None
+
+        # Collect unique descriptions
+        unique_descriptions = list(set(tx.get('description', '') for tx in transactions if tx.get('description')))
+
+        if not unique_descriptions:
+            return transactions, None
+
+        print(f"Extracting merchants from {len(unique_descriptions)} unique descriptions using AI...")
+
+        # Ask Gemini for a regex pattern
+        regex_result = gemini_service.get_merchant_extraction_regex(unique_descriptions, bank_name)
+
+        if not regex_result or 'regex' not in regex_result:
+            print("AI did not return a valid regex pattern, falling back to normalizer")
+            return transactions, None
+
+        regex_pattern = regex_result['regex']
+        print(f"AI generated regex: {regex_pattern}")
+
+        # Apply the regex to extract merchants
+        all_descriptions = [tx.get('description', '') for tx in transactions]
+        merchant_map = gemini_service.extract_merchants_batch(all_descriptions, regex_pattern)
+
+        # Update transactions with extracted merchant names
+        for tx in transactions:
+            desc = tx.get('description', '')
+            if desc and desc in merchant_map:
+                tx['merchant_name'] = merchant_map[desc]
+
+        print(f"Extracted merchants for {len(merchant_map)} descriptions")
+        return transactions, regex_pattern
+
+    @staticmethod
     async def process_upload(file: UploadFile, bank_name: str, template: Optional[StatementTemplate] = None) -> Dict[str, Any]:
         """
         Process an uploaded file.
         If template is provided, use it.
         If not, use AI to detect structure and parse.
-        Returns: { "transactions": [...], "detected_template": {...} }
+
+        After parsing, uses AI to extract merchant names from descriptions.
+
+        Returns: { "transactions": [...], "detected_template": {...}, "merchant_regex": "..." }
         """
         file_ext = file.filename.split('.')[-1].lower()
         file_bytes = await file.read()
         await file.seek(0)
-        
+
         result = {
             "transactions": [],
             "template_found": False,
-            "detected_structure": None
+            "detected_structure": None,
+            "merchant_regex": None
         }
-        
+
         # 1. Try parsing with existing template
         if template and template.file_type == file_ext:
             print(f"Using existing template for {bank_name}")
             txs = StatementParserService.parse_with_template(file_bytes, file_ext, template)
             if txs:
+                # Apply AI merchant extraction
+                txs, merchant_regex = StatementParserService._apply_ai_merchant_extraction(txs, bank_name)
                 result["transactions"] = txs
                 result["template_found"] = True
+                result["merchant_regex"] = merchant_regex
                 return result
-        
+
         # 2. If no template or parsing failed, use AI to detect structure
         print(f"No template found or parsing failed. Using AI for {bank_name}")
-        
+
         df_clean = pd.DataFrame()
         content_sample = ""
         full_text = "" # Initialize full_text for PDF
         header_row = 0
-        
+
         if file_ext in ['csv', 'xls', 'xlsx']:
             # Read file without assuming header position (header=None)
             df = pd.read_excel(io.BytesIO(file_bytes), header=None) if file_ext in ['xls', 'xlsx'] else pd.read_csv(io.BytesIO(file_bytes), header=None)
-            
+
             # Take a sample of the raw data (first 50 rows) to send to AI
             # We convert to CSV string so AI can see the structure including empty rows/cells
             df_sample = df.head(50)
             content_sample = df_sample.to_csv(index=True, header=False)
-            
+
         elif file_ext == 'pdf':
             # Extract ALL text for parsing
             full_text = StatementParserService._extract_text_from_pdf(file_bytes)
             # Sample for AI (first 3000 chars)
             content_sample = full_text[:3000]
-            
+
         # Ask AI for structure AND header row index (or regex)
         structure = gemini_service.detect_structure(content_sample, file_ext, bank_name)
-        
+
         if structure:
             header_row = structure.get("header_row_index", 0)
             print(f"AI detected structure: {structure}")
-            
+
             if file_ext in ['csv', 'xls', 'xlsx']:
                 # Re-read with the AI-detected header
                 df_clean = pd.read_excel(io.BytesIO(file_bytes), header=header_row) if file_ext in ['xls', 'xlsx'] else pd.read_csv(io.BytesIO(file_bytes), header=header_row)
-                
+
                 # Clean the dataframe (remove empty rows, etc.)
                 df_clean = StatementParserService._clean_dataframe(df_clean, 0)
-                
+
                 result["transactions"] = StatementParserService.parse_with_structure(df_clean, structure)
                 result["detected_structure"] = structure
             elif file_ext == 'pdf':
                 # Parse using regex on full text
                 result["transactions"] = StatementParserService.parse_with_structure(None, structure, full_text=full_text)
                 result["detected_structure"] = structure
-        
+
+        # Apply AI merchant extraction to parsed transactions
+        if result["transactions"]:
+            result["transactions"], result["merchant_regex"] = StatementParserService._apply_ai_merchant_extraction(
+                result["transactions"], bank_name
+            )
+
         return result

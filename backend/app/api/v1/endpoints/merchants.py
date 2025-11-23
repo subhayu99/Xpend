@@ -13,8 +13,18 @@ from app.schemas.merchant import (
     MerchantSuggestionsResponse,
     MerchantSuggestion,
     CategoryInfo,
+    UncategorizedGroupsResponse,
+    MerchantGroup,
+    TransactionSummary,
+    BulkCategorizeRequest,
+    BulkCategorizeResponse,
+    UnextractedAccountInfo,
+    UnextractedAccountsResponse,
+    ExtractMerchantsResponse,
 )
 from app.repositories.merchant_repo import MerchantRepository
+from app.repositories.transaction_repo import TransactionRepository
+from app.repositories.account_repo import AccountRepository
 from app.utils.merchant_normalizer import MerchantNormalizer
 from typing import Optional
 import uuid
@@ -285,3 +295,230 @@ def apply_merchant_mapping(
         "message": f"Applied mapping to {updated_count} transactions",
         "transactions_updated": updated_count
     }
+
+
+@router.get("/uncategorized/groups", response_model=UncategorizedGroupsResponse)
+def get_uncategorized_groups(
+    include_transactions: bool = Query(default=False, description="Include full transaction details"),
+    limit: int = Query(default=100, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+):
+    """
+    Get uncategorized transactions grouped by merchant name.
+    This endpoint helps users see all transactions that need categorization,
+    grouped by the extracted merchant name for easy bulk categorization.
+    """
+    groups_data = TransactionRepository.get_uncategorized_grouped_by_merchant(
+        db, current_user.id, include_transactions, limit
+    )
+
+    # Convert to response models
+    groups = []
+    total_transactions = 0
+
+    for g in groups_data:
+        transactions = []
+        if include_transactions and g['transactions']:
+            transactions = [
+                TransactionSummary(
+                    id=tx['id'],
+                    transaction_date=tx['transaction_date'],
+                    amount=tx['amount'],
+                    description=tx['description'],
+                    account_id=tx['account_id'],
+                    account_name=tx.get('account_name')
+                )
+                for tx in g['transactions']
+            ]
+
+        groups.append(MerchantGroup(
+            merchant_name=g['merchant_name'],
+            transaction_count=g['transaction_count'],
+            total_amount=g['total_amount'],
+            first_date=g['first_date'],
+            last_date=g['last_date'],
+            transactions=transactions,
+            sample_descriptions=g['sample_descriptions']
+        ))
+        total_transactions += g['transaction_count']
+
+    return UncategorizedGroupsResponse(
+        groups=groups,
+        total_groups=len(groups),
+        total_transactions=total_transactions
+    )
+
+
+@router.post("/uncategorized/categorize", response_model=BulkCategorizeResponse)
+def bulk_categorize_merchant(
+    request: BulkCategorizeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+):
+    """
+    Categorize all uncategorized transactions with a specific merchant name.
+    Optionally creates a merchant mapping for future automatic categorization.
+    """
+    # Validate category exists
+    category = db.get(Category, request.category_id)
+    if not category or category.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Category not found"
+        )
+
+    # Categorize existing transactions
+    updated_count = TransactionRepository.categorize_by_merchant_name(
+        db, current_user.id, request.merchant_name, request.category_id
+    )
+
+    merchant_created = False
+    merchant_id = None
+
+    # Create merchant mapping if requested
+    if request.create_mapping:
+        # Check if mapping already exists
+        existing = MerchantRepository.get_by_normalized_name(
+            db, current_user.id, request.merchant_name
+        )
+
+        if not existing:
+            # Create new merchant mapping
+            merchant_data = MerchantCreate(
+                normalized_name=request.merchant_name,
+                patterns=request.patterns if request.patterns else [request.merchant_name],
+                category_id=request.category_id,
+                fuzzy_threshold=0.85
+            )
+            merchant = MerchantRepository.create(db, current_user.id, merchant_data)
+            merchant_created = True
+            merchant_id = merchant.id
+        else:
+            # Update existing mapping's category
+            existing.category_id = request.category_id
+            if request.patterns:
+                existing.patterns = list(set(existing.patterns + request.patterns))
+            db.add(existing)
+            db.commit()
+            merchant_id = existing.id
+
+    return BulkCategorizeResponse(
+        transactions_updated=updated_count,
+        merchant_created=merchant_created,
+        merchant_id=merchant_id
+    )
+
+
+@router.get("/extract/accounts", response_model=UnextractedAccountsResponse)
+def get_accounts_with_unextracted_merchants(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+):
+    """
+    Get list of accounts that have transactions without extracted merchant names.
+    Useful for showing which accounts need merchant re-extraction.
+    """
+    accounts_data = TransactionRepository.get_unextracted_counts_by_account(
+        db, current_user.id
+    )
+
+    accounts = [
+        UnextractedAccountInfo(
+            account_id=a['account_id'],
+            account_name=a['account_name'],
+            bank_name=a['bank_name'],
+            count=a['count']
+        )
+        for a in accounts_data
+    ]
+
+    total = sum(a['count'] for a in accounts_data)
+
+    return UnextractedAccountsResponse(
+        accounts=accounts,
+        total_unextracted=total
+    )
+
+
+@router.post("/extract/{account_id}", response_model=ExtractMerchantsResponse)
+def extract_merchants_for_account(
+    account_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+):
+    """
+    Re-run merchant extraction for all transactions in an account that don't have merchant names.
+    Uses AI to generate a regex pattern specific to this bank's transaction format.
+    """
+    from app.services.gemini_service import gemini_service
+
+    # Verify account belongs to user
+    account = AccountRepository.get_by_id(db, account_id, current_user.id)
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found"
+        )
+
+    # Get transactions without merchant names
+    transactions = TransactionRepository.get_transactions_without_merchant_by_account(
+        db, current_user.id, account_id
+    )
+
+    if not transactions:
+        return ExtractMerchantsResponse(
+            transactions_updated=0,
+            regex_used=None,
+            bank_name=account.bank_name
+        )
+
+    # Collect unique descriptions
+    descriptions = list(set(tx.description for tx in transactions if tx.description))
+
+    if not descriptions:
+        return ExtractMerchantsResponse(
+            transactions_updated=0,
+            regex_used=None,
+            bank_name=account.bank_name
+        )
+
+    # Ask Gemini for a regex pattern specific to this bank
+    bank_name = account.bank_name or account.name
+    regex_result = gemini_service.get_merchant_extraction_regex(descriptions, bank_name)
+
+    if not regex_result or 'regex' not in regex_result:
+        # Fallback to normalizer
+        updates = {}
+        for tx in transactions:
+            if tx.description:
+                merchant = MerchantNormalizer.normalize(tx.description)
+                if merchant:
+                    updates[tx.id] = merchant
+
+        updated_count = TransactionRepository.bulk_update_merchant_names(db, updates)
+        return ExtractMerchantsResponse(
+            transactions_updated=updated_count,
+            regex_used=None,
+            bank_name=bank_name
+        )
+
+    # Apply the regex
+    regex_pattern = regex_result['regex']
+    all_descriptions = [tx.description for tx in transactions]
+    merchant_map = gemini_service.extract_merchants_batch(all_descriptions, regex_pattern)
+
+    # Build updates dict mapping transaction_id -> merchant_name
+    updates = {}
+    for tx in transactions:
+        if tx.description and tx.description in merchant_map:
+            updates[tx.id] = merchant_map[tx.description]
+
+    # Apply updates
+    updated_count = TransactionRepository.bulk_update_merchant_names(db, updates)
+
+    return ExtractMerchantsResponse(
+        transactions_updated=updated_count,
+        regex_used=regex_pattern,
+        bank_name=bank_name
+    )

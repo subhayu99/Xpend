@@ -469,3 +469,212 @@ class TransactionRepository:
             db.commit()
 
         return updated_count
+
+    @staticmethod
+    def get_uncategorized_grouped_by_merchant(
+        db: Session,
+        user_id: uuid.UUID,
+        include_transactions: bool = False,
+        limit: int = 100
+    ) -> List[dict]:
+        """
+        Get uncategorized transactions grouped by merchant_name.
+        Returns groups sorted by transaction count (descending).
+        """
+        from sqlmodel import func
+        from app.models.account import Account
+
+        # Query to get groups with aggregates
+        query = (
+            select(
+                Transaction.merchant_name,
+                func.count(Transaction.id).label('transaction_count'),
+                func.sum(Transaction.amount).label('total_amount'),
+                func.min(Transaction.transaction_date).label('first_date'),
+                func.max(Transaction.transaction_date).label('last_date')
+            )
+            .where(
+                Transaction.user_id == user_id,
+                Transaction.category_id.is_(None),
+                Transaction.merchant_name.isnot(None)
+            )
+            .group_by(Transaction.merchant_name)
+            .order_by(func.count(Transaction.id).desc())
+            .limit(limit)
+        )
+
+        results = db.exec(query).all()
+        groups = []
+
+        for row in results:
+            group = {
+                'merchant_name': row.merchant_name,
+                'transaction_count': row.transaction_count,
+                'total_amount': float(row.total_amount) if row.total_amount else 0.0,
+                'first_date': row.first_date,
+                'last_date': row.last_date,
+                'transactions': [],
+                'sample_descriptions': []
+            }
+
+            if include_transactions:
+                # Fetch all transactions for this merchant
+                txs = db.exec(
+                    select(Transaction)
+                    .where(
+                        Transaction.user_id == user_id,
+                        Transaction.merchant_name == row.merchant_name,
+                        Transaction.category_id.is_(None)
+                    )
+                    .order_by(Transaction.transaction_date.desc())
+                ).all()
+
+                # Get account names for transactions
+                account_ids = list(set(tx.account_id for tx in txs))
+                accounts = {a.id: a.name for a in db.exec(
+                    select(Account).where(Account.id.in_(account_ids))
+                ).all()}
+
+                group['transactions'] = [
+                    {
+                        'id': tx.id,
+                        'transaction_date': tx.transaction_date,
+                        'amount': tx.amount,
+                        'description': tx.description,
+                        'account_id': tx.account_id,
+                        'account_name': accounts.get(tx.account_id)
+                    }
+                    for tx in txs
+                ]
+
+                # Get unique descriptions as samples
+                unique_descs = list(set(tx.description for tx in txs if tx.description))[:5]
+                group['sample_descriptions'] = unique_descs
+            else:
+                # Just get sample descriptions without full transaction data
+                sample_txs = db.exec(
+                    select(Transaction.description)
+                    .where(
+                        Transaction.user_id == user_id,
+                        Transaction.merchant_name == row.merchant_name,
+                        Transaction.category_id.is_(None)
+                    )
+                    .distinct()
+                    .limit(5)
+                ).all()
+                group['sample_descriptions'] = [d for d in sample_txs if d]
+
+            groups.append(group)
+
+        return groups
+
+    @staticmethod
+    def categorize_by_merchant_name(
+        db: Session,
+        user_id: uuid.UUID,
+        merchant_name: str,
+        category_id: uuid.UUID
+    ) -> int:
+        """
+        Assign a category to all uncategorized transactions with a specific merchant_name.
+        Returns the number of transactions updated.
+        """
+        # Get all matching transactions
+        transactions = db.exec(
+            select(Transaction).where(
+                Transaction.user_id == user_id,
+                Transaction.merchant_name == merchant_name,
+                Transaction.category_id.is_(None)
+            )
+        ).all()
+
+        for tx in transactions:
+            tx.category_id = category_id
+            db.add(tx)
+
+        if transactions:
+            db.commit()
+
+        return len(transactions)
+
+    @staticmethod
+    def get_transactions_without_merchant_by_account(
+        db: Session,
+        user_id: uuid.UUID,
+        account_id: uuid.UUID
+    ) -> List[Transaction]:
+        """
+        Get all transactions for a specific account that don't have a merchant_name.
+        """
+        return db.exec(
+            select(Transaction).where(
+                Transaction.user_id == user_id,
+                Transaction.account_id == account_id,
+                Transaction.merchant_name.is_(None)
+            )
+        ).all()
+
+    @staticmethod
+    def get_unextracted_counts_by_account(
+        db: Session,
+        user_id: uuid.UUID
+    ) -> List[dict]:
+        """
+        Get count of transactions without merchant_name grouped by account.
+        Returns list of {account_id, account_name, bank_name, count}.
+        """
+        from sqlmodel import func
+        from app.models.account import Account
+
+        # Query to get counts per account
+        query = (
+            select(
+                Transaction.account_id,
+                Account.name.label('account_name'),
+                Account.bank_name,
+                func.count(Transaction.id).label('count')
+            )
+            .join(Account, Transaction.account_id == Account.id)
+            .where(
+                Transaction.user_id == user_id,
+                Transaction.merchant_name.is_(None)
+            )
+            .group_by(Transaction.account_id, Account.name, Account.bank_name)
+            .order_by(func.count(Transaction.id).desc())
+        )
+
+        results = db.exec(query).all()
+        return [
+            {
+                'account_id': row.account_id,
+                'account_name': row.account_name,
+                'bank_name': row.bank_name,
+                'count': row.count
+            }
+            for row in results
+        ]
+
+    @staticmethod
+    def bulk_update_merchant_names(
+        db: Session,
+        updates: dict  # {transaction_id: merchant_name}
+    ) -> int:
+        """
+        Bulk update merchant_name for multiple transactions.
+        Returns count of updated transactions.
+        """
+        if not updates:
+            return 0
+
+        count = 0
+        for tx_id, merchant_name in updates.items():
+            tx = db.get(Transaction, tx_id)
+            if tx and not tx.merchant_name:  # Only update if not already set
+                tx.merchant_name = merchant_name
+                db.add(tx)
+                count += 1
+
+        if count > 0:
+            db.commit()
+
+        return count

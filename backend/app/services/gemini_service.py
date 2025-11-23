@@ -181,6 +181,9 @@ Output ONLY the category name, nothing else.
 
         generate_content_config = types.GenerateContentConfig(
             temperature=0.0,
+            thinkingConfig={
+                "thinkingLevel": "LOW",
+            },
         )
 
         try:
@@ -223,6 +226,132 @@ Output ONLY the category name, nothing else.
                 )
         except Exception:
             return ""
+
+
+    def get_merchant_extraction_regex(self, descriptions: List[str], bank_name: str = "") -> Dict[str, Any]:
+        """
+        Given a list of transaction descriptions, ask Gemini to generate a regex
+        pattern that extracts the merchant name from these descriptions.
+
+        Args:
+            descriptions: List of unique transaction descriptions (sample)
+            bank_name: Optional bank name for context
+
+        Returns:
+            Dict with regex pattern and extraction group info
+        """
+        if not descriptions:
+            return {}
+
+        # Take a sample of unique descriptions (max 30)
+        sample = list(set(descriptions))[:30]
+        descriptions_text = "\n".join(f"- {d}" for d in sample)
+
+        bank_context = f" from {bank_name}" if bank_name else ""
+
+        prompt = f"""
+You are a financial data extraction expert. I have transaction descriptions{bank_context} and need to extract the merchant/payee name from each.
+
+Transaction descriptions:
+{descriptions_text}
+
+**Your task:** Create a Python regex pattern that extracts the merchant name from these descriptions.
+
+**Common patterns to handle:**
+- UPI transactions: "UPI/SWIGGY*DELHI/REF123" → extract "SWIGGY"
+- NEFT/IMPS: "NEFT/AMAZON INDIA/PAY789" → extract "AMAZON INDIA"
+- Card transactions: "POS 123456 NETFLIX.COM" → extract "NETFLIX.COM"
+- Simple: "SWIGGY*FOOD ORDER" → extract "SWIGGY"
+
+**Requirements:**
+1. The regex should have a named group `(?P<merchant>...)` for the merchant name
+2. Handle common prefixes: UPI/, NEFT/, IMPS/, POS, ATM, etc.
+3. Stop at common suffixes: *, /, REF, PAYMENT, transaction IDs (long numbers)
+4. The merchant name should be clean (no transaction IDs, reference numbers)
+
+**Return JSON:**
+{{
+  "regex": "your_regex_pattern_here",
+  "description": "Brief explanation of what the regex matches",
+  "examples": [
+    {{"input": "example desc", "extracted": "MERCHANT"}}
+  ]
+}}
+
+Output ONLY valid JSON. Ensure regex is properly escaped for JSON (double backslashes for \\).
+"""
+
+        contents = [
+            types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=prompt)],
+            ),
+        ]
+
+        generate_content_config = types.GenerateContentConfig(
+            temperature=0.0,
+            response_mime_type="application/json",
+            thinkingConfig={
+                "thinkingLevel": "HIGH",
+            },
+        )
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=contents,
+                config=generate_content_config,
+            )
+
+            if response.text:
+                return json.loads(response.text)
+            return {}
+
+        except Exception as e:
+            print(f"Error calling Gemini for merchant regex: {e}")
+            return {}
+
+    def extract_merchants_batch(self, descriptions: List[str], regex_pattern: str) -> Dict[str, str]:
+        """
+        Apply a regex pattern to extract merchants from descriptions.
+
+        Args:
+            descriptions: List of transaction descriptions
+            regex_pattern: Regex with named group 'merchant'
+
+        Returns:
+            Dict mapping description -> extracted merchant name
+        """
+        import re
+
+        results = {}
+        try:
+            pattern = re.compile(regex_pattern, re.IGNORECASE)
+
+            for desc in descriptions:
+                if not desc:
+                    continue
+                match = pattern.search(desc)
+                if match and 'merchant' in match.groupdict():
+                    merchant = match.group('merchant')
+                    if merchant:
+                        # Clean up: strip whitespace, remove trailing special chars
+                        merchant = merchant.strip().rstrip('*/-').strip()
+                        results[desc] = merchant
+                else:
+                    # Fallback: use the normalizer
+                    from app.utils.merchant_normalizer import MerchantNormalizer
+                    results[desc] = MerchantNormalizer.normalize(desc)
+
+        except re.error as e:
+            print(f"Invalid regex pattern: {e}")
+            # Fallback to normalizer for all
+            from app.utils.merchant_normalizer import MerchantNormalizer
+            for desc in descriptions:
+                if desc:
+                    results[desc] = MerchantNormalizer.normalize(desc)
+
+        return results
 
 
 gemini_service = GeminiService()
