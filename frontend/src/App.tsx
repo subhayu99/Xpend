@@ -5,6 +5,7 @@ import { RegisterPage } from './pages/RegisterPage';
 import { AccountsPage } from './pages/AccountsPage';
 import { TransactionsPage } from './pages/TransactionsPage';
 import { CategoriesPage } from './pages/CategoriesPage';
+import { BudgetsPage } from './pages/BudgetsPage';
 import { useAuthStore } from './store/authStore';
 
 import { Layout } from './components/Layout';
@@ -51,6 +52,14 @@ function App() {
           element={
             <ProtectedRoute>
               <CategoriesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/budgets"
+          element={
+            <ProtectedRoute>
+              <BudgetsPage />
             </ProtectedRoute>
           }
         />

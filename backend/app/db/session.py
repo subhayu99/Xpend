@@ -7,6 +7,7 @@ from app.models.category import Category
 from app.models.transaction import Transaction
 from app.models.template import StatementTemplate
 from app.models.transfer import Transfer
+from app.models.budget import Budget
 
 # Create engine
 engine = create_engine(
