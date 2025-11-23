@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { transactionService, Transaction, TransactionCreate } from '../services/transactionService';
+import { transactionService, Transaction, TransactionCreate, TransactionFilters } from '../services/transactionService';
 import { accountService, Account } from '../services/accountService';
+import { categoryService, Category } from '../services/categoryService';
 import { EditTransactionModal } from '../components/EditTransactionModal';
 import { AddTransactionModal } from '../components/AddTransactionModal';
 
 export const TransactionsPage: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   
@@ -20,6 +22,16 @@ export const TransactionsPage: React.FC = () => {
   const [selectedAccount, setSelectedAccount] = useState<string>('');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  
+  // Filter State
+  const [filters, setFilters] = useState<TransactionFilters>({
+    account_id: undefined,
+    category_id: undefined,
+    transaction_type: undefined,
+    start_date: undefined,
+    end_date: undefined,
+    search: undefined,
+  });
 
   useEffect(() => {
     loadData();
@@ -27,13 +39,15 @@ export const TransactionsPage: React.FC = () => {
 
   const loadData = async () => {
     try {
-      const [txData, accData] = await Promise.all([
-        transactionService.getAll(),
+      const [txData, accData, catData] = await Promise.all([
+        transactionService.getAll(filters),
         accountService.getAll(),
+        categoryService.getAll(),
       ]);
       setTransactions(txData);
       setAccounts(accData);
-      if (accData.length > 0) {
+      setCategories(catData);
+      if (accData.length > 0 && !selectedAccount) {
         setSelectedAccount(accData[0].id);
       }
     } catch (error) {
@@ -42,6 +56,13 @@ export const TransactionsPage: React.FC = () => {
       setLoading(false);
     }
   };
+  
+  // Reload when filters change
+  useEffect(() => {
+    if (!loading) {
+      loadData();
+    }
+  }, [filters]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -235,6 +256,92 @@ export const TransactionsPage: React.FC = () => {
             </div>
           </div>
         )}
+      </div>
+
+
+      {/* Filters */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <h3 className="text-lg font-semibold mb-4 text-gray-900">Filters</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Date Range */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+            <input
+              type="date"
+              value={filters.start_date || ''}
+              onChange={(e) => setFilters({ ...filters, start_date: e.target.value || undefined })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+            <input
+              type="date"
+              value={filters.end_date || ''}
+              onChange={(e) => setFilters({ ...filters, end_date: e.target.value || undefined })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+          </div>
+          
+          {/* Category Filter */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+            <select
+              value={filters.category_id || ''}
+              onChange={(e) => setFilters({ ...filters, category_id: e.target.value || undefined })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            >
+              <option value="">All Categories</option>
+              {categories.map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </select>
+          </div>
+          
+          {/* Type Filter */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+            <select
+              value={filters.transaction_type || ''}
+              onChange={(e) => setFilters({ ...filters, transaction_type: e.target.value as any || undefined })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            >
+              <option value="">All Types</option>
+              <option value="income">Income</option>
+              <option value="expense">Expense</option>
+              <option value="transfer">Transfer</option>
+            </select>
+          </div>
+          
+          {/* Search */}
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+            <input
+              type="text"
+              placeholder="Search description or merchant..."
+              value={filters.search || ''}
+              onChange={(e) => setFilters({ ...filters, search: e.target.value || undefined })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+          </div>
+          
+          {/* Clear Filters */}
+          <div className="flex items-end">
+            <button
+              onClick={() => setFilters({
+                account_id: undefined,
+                category_id: undefined,
+                transaction_type: undefined,
+                start_date: undefined,
+                end_date: undefined,
+                search: undefined,
+              })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
+            >
+              Clear Filters
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Transactions List */}

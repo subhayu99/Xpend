@@ -145,10 +145,26 @@ def get_transactions(
     skip: int = 0,
     limit: int = 100,
     account_id: Optional[uuid.UUID] = None,
+    category_id: Optional[uuid.UUID] = None,
+    transaction_type: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    search: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session)
 ):
-    return TransactionRepository.get_all(db, current_user.id, skip, limit, account_id)
+    return TransactionRepository.get_all(
+        db, 
+        current_user.id, 
+        skip, 
+        limit, 
+        account_id,
+        category_id,
+        transaction_type,
+        start_date,
+        end_date,
+        search
+    )
 
 @router.put("/{transaction_id}", response_model=TransactionResponse)
 def update_transaction(

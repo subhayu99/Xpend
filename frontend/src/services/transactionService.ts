@@ -28,10 +28,30 @@ export interface ParseResult {
   detected_structure: any | null;
 }
 
+export interface TransactionFilters {
+  skip?: number;
+  limit?: number;
+  account_id?: string;
+  category_id?: string;
+  transaction_type?: 'income' | 'expense' | 'transfer';
+  start_date?: string;
+  end_date?: string;
+  search?: string;
+}
+
 export const transactionService = {
-  getAll: async (skip = 0, limit = 100, accountId?: string): Promise<Transaction[]> => {
-    const params: any = { skip, limit };
-    if (accountId) params.account_id = accountId;
+  getAll: async (filters: TransactionFilters = {}): Promise<Transaction[]> => {
+    const params: any = { 
+      skip: filters.skip || 0, 
+      limit: filters.limit || 100 
+    };
+    if (filters.account_id) params.account_id = filters.account_id;
+    if (filters.category_id) params.category_id = filters.category_id;
+    if (filters.transaction_type) params.transaction_type = filters.transaction_type;
+    if (filters.start_date) params.start_date = filters.start_date;
+    if (filters.end_date) params.end_date = filters.end_date;
+    if (filters.search) params.search = filters.search;
+    
     const response = await api.get('/transactions', { params });
     return response.data;
   },

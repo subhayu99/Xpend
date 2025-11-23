@@ -315,13 +315,52 @@ class TransactionRepository:
         user_id: uuid.UUID, 
         skip: int = 0, 
         limit: int = 100,
-        account_id: Optional[uuid.UUID] = None
+        account_id: Optional[uuid.UUID] = None,
+        category_id: Optional[uuid.UUID] = None,
+        transaction_type: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        search: Optional[str] = None
     ) -> List[Transaction]:
-        """Get all transactions for a user with pagination and filtering"""
+        """Get all transactions for a user with pagination and advanced filtering"""
+        from datetime import datetime
+        
         query = select(Transaction).where(Transaction.user_id == user_id)
         
+        # Account filter
         if account_id:
             query = query.where(Transaction.account_id == account_id)
+        
+        # Category filter
+        if category_id:
+            query = query.where(Transaction.category_id == category_id)
+        
+        # Transaction type filter
+        if transaction_type:
+            query = query.where(Transaction.transaction_type == transaction_type)
+        
+        # Date range filter
+        if start_date:
+            try:
+                start_dt = datetime.fromisoformat(start_date)
+                query = query.where(Transaction.transaction_date >= start_dt)
+            except ValueError:
+                pass
+        
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(end_date)
+                query = query.where(Transaction.transaction_date <= end_dt)
+            except ValueError:
+                pass
+        
+        # Search filter (description or merchant name)
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.where(
+                (Transaction.description.ilike(search_pattern)) |
+                (Transaction.merchant_name.ilike(search_pattern))
+            )
             
         query = query.order_by(Transaction.transaction_date.desc())
         query = query.offset(skip).limit(limit)
