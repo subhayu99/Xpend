@@ -320,10 +320,12 @@ class TransactionRepository:
         transaction_type: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-        search: Optional[str] = None
-    ) -> List[Transaction]:
+        search: Optional[str] = None,
+        merchant_name: Optional[str] = None
+    ) -> tuple[List[Transaction], int]:
         """Get all transactions for a user with pagination and advanced filtering"""
         from datetime import datetime
+        from sqlmodel import func
         
         query = select(Transaction).where(Transaction.user_id == user_id)
         
@@ -338,6 +340,10 @@ class TransactionRepository:
         # Transaction type filter
         if transaction_type:
             query = query.where(Transaction.transaction_type == transaction_type)
+            
+        # Merchant filter
+        if merchant_name:
+            query = query.where(Transaction.merchant_name == merchant_name)
         
         # Date range filter
         if start_date:
@@ -362,10 +368,15 @@ class TransactionRepository:
                 (Transaction.merchant_name.ilike(search_pattern))
             )
             
+        # Get total count
+        # We use select(func.count()).select_from(query.subquery()) to handle complex queries correctly
+        count_query = select(func.count()).select_from(query.subquery())
+        total = db.exec(count_query).one()
+            
         query = query.order_by(Transaction.transaction_date.desc())
         query = query.offset(skip).limit(limit)
         
-        return db.exec(query).all()
+        return db.exec(query).all(), total
     
     @staticmethod
     def update(db: Session, transaction: Transaction, update_data: TransactionUpdate) -> Transaction:

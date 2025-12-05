@@ -151,8 +151,7 @@ export const CategoriesPage: React.FC = () => {
                     {category.name}
                   </span>
                 </div>
-                {!category.is_default && (
-                  <button
+                <button
                     onClick={() => handleDelete(category.id)}
                     className="text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity p-1"
                     title="Delete category"
@@ -161,7 +160,6 @@ export const CategoriesPage: React.FC = () => {
                       <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                     </svg>
                   </button>
-                )}
               </div>
             ))}
           </div>
@@ -181,8 +179,7 @@ export const CategoriesPage: React.FC = () => {
                     {category.name}
                   </span>
                 </div>
-                {!category.is_default && (
-                  <button
+                <button
                     onClick={() => handleDelete(category.id)}
                     className="text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity p-1"
                     title="Delete category"
@@ -191,7 +188,6 @@ export const CategoriesPage: React.FC = () => {
                       <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                     </svg>
                   </button>
-                )}
               </div>
             ))}
           </div>

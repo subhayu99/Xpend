@@ -9,6 +9,7 @@ export interface DashboardSummary {
 }
 
 export interface CategorySpend {
+  category_id: string | null;
   category_name: string;
   amount: number;
   color: string | null;

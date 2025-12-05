@@ -6,7 +6,7 @@ from app.models.user import User
 from app.models.account import Account
 from app.models.category import Category
 from app.models.template import StatementTemplate
-from app.schemas.transaction import TransactionCreate, TransactionResponse, TransactionUpdate
+from app.schemas.transaction import TransactionCreate, TransactionResponse, TransactionUpdate, TransactionListResponse
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.template_repo import TemplateRepository
 from app.services.statement_parser import StatementParserService
@@ -157,7 +157,7 @@ def create_transaction(
 
     return created
 
-@router.get("", response_model=List[TransactionResponse])
+@router.get("", response_model=TransactionListResponse)
 def get_transactions(
     skip: int = 0,
     limit: int = 100,
@@ -167,10 +167,11 @@ def get_transactions(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     search: Optional[str] = None,
+    merchant_name: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session)
 ):
-    return TransactionRepository.get_all(
+    items, total = TransactionRepository.get_all(
         db, 
         current_user.id, 
         skip, 
@@ -180,7 +181,17 @@ def get_transactions(
         transaction_type,
         start_date,
         end_date,
-        search
+        search,
+        merchant_name
+    )
+    
+    page = (skip // limit) + 1
+    
+    return TransactionListResponse(
+        items=items,
+        total=total,
+        page=page,
+        limit=limit
     )
 
 @router.get("/{transaction_id}", response_model=TransactionResponse)
@@ -244,7 +255,7 @@ def export_transactions_csv(
     import csv
     
     # Get filtered transactions
-    transactions = TransactionRepository.get_all(
+    transactions, _ = TransactionRepository.get_all(
         db,
         current_user.id,
         skip=0,

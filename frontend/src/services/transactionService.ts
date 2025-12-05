@@ -28,6 +28,13 @@ export interface ParseResult {
   detected_structure: any | null;
 }
 
+export interface TransactionListResponse {
+  items: Transaction[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export interface TransactionFilters {
   skip?: number;
   limit?: number;
@@ -37,10 +44,11 @@ export interface TransactionFilters {
   start_date?: string;
   end_date?: string;
   search?: string;
+  merchant_name?: string;
 }
 
 export const transactionService = {
-  getAll: async (filters: TransactionFilters = {}): Promise<Transaction[]> => {
+  getAll: async (filters: TransactionFilters = {}): Promise<TransactionListResponse> => {
     const params: any = { 
       skip: filters.skip || 0, 
       limit: filters.limit || 100 
@@ -51,6 +59,7 @@ export const transactionService = {
     if (filters.start_date) params.start_date = filters.start_date;
     if (filters.end_date) params.end_date = filters.end_date;
     if (filters.search) params.search = filters.search;
+    if (filters.merchant_name) params.merchant_name = filters.merchant_name;
     
     const response = await api.get('/transactions', { params });
     return response.data;

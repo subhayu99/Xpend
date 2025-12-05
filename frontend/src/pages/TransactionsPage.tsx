@@ -8,6 +8,9 @@ import { AddTransactionModal } from '../components/AddTransactionModal';
 
 export const TransactionsPage: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [totalTransactions, setTotalTransactions] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [limit, setLimit] = useState(100);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,20 +40,23 @@ export const TransactionsPage: React.FC = () => {
     start_date: undefined,
     end_date: undefined,
     search: undefined,
+    merchant_name: undefined,
   });
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [currentPage]); // Load on mount and page change. Filters handled by separate effect? No, let's combine.
 
   const loadData = async () => {
     try {
-      const [txData, accData, catData] = await Promise.all([
-        transactionService.getAll(filters),
+      setLoading(true);
+      const [txResponse, accData, catData] = await Promise.all([
+        transactionService.getAll({ ...filters, skip: (currentPage - 1) * limit, limit }),
         accountService.getAll(),
         categoryService.getAll(),
       ]);
-      setTransactions(txData);
+      setTransactions(txResponse.items);
+      setTotalTransactions(txResponse.total);
       setAccounts(accData);
       setCategories(catData);
       if (accData.length > 0 && !selectedAccount) {
@@ -338,7 +344,10 @@ export const TransactionsPage: React.FC = () => {
             <input
               type="date"
               value={filters.start_date || ''}
-              onChange={(e) => setFilters({ ...filters, start_date: e.target.value || undefined })}
+              onChange={(e) => {
+                setFilters({ ...filters, start_date: e.target.value || undefined });
+                setCurrentPage(1);
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
@@ -347,7 +356,10 @@ export const TransactionsPage: React.FC = () => {
             <input
               type="date"
               value={filters.end_date || ''}
-              onChange={(e) => setFilters({ ...filters, end_date: e.target.value || undefined })}
+              onChange={(e) => {
+                setFilters({ ...filters, end_date: e.target.value || undefined });
+                setCurrentPage(1);
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
@@ -357,7 +369,10 @@ export const TransactionsPage: React.FC = () => {
             <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
             <select
               value={filters.category_id || ''}
-              onChange={(e) => setFilters({ ...filters, category_id: e.target.value || undefined })}
+              onChange={(e) => {
+                setFilters({ ...filters, category_id: e.target.value || undefined });
+                setCurrentPage(1);
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             >
               <option value="">All Categories</option>
@@ -372,7 +387,10 @@ export const TransactionsPage: React.FC = () => {
             <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
             <select
               value={filters.transaction_type || ''}
-              onChange={(e) => setFilters({ ...filters, transaction_type: e.target.value as any || undefined })}
+              onChange={(e) => {
+                setFilters({ ...filters, transaction_type: e.target.value as any || undefined });
+                setCurrentPage(1);
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             >
               <option value="">All Types</option>
@@ -387,9 +405,27 @@ export const TransactionsPage: React.FC = () => {
             <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
             <input
               type="text"
-              placeholder="Search description or merchant..."
+              placeholder="Search description..."
               value={filters.search || ''}
-              onChange={(e) => setFilters({ ...filters, search: e.target.value || undefined })}
+              onChange={(e) => {
+                setFilters({ ...filters, search: e.target.value || undefined });
+                setCurrentPage(1);
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* Merchant Filter */}
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Merchant</label>
+            <input
+              type="text"
+              placeholder="Filter by merchant name..."
+              value={filters.merchant_name || ''}
+              onChange={(e) => {
+                setFilters({ ...filters, merchant_name: e.target.value || undefined });
+                setCurrentPage(1);
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
@@ -397,14 +433,18 @@ export const TransactionsPage: React.FC = () => {
           {/* Clear Filters */}
           <div className="flex items-end">
             <button
-              onClick={() => setFilters({
-                account_id: undefined,
-                category_id: undefined,
-                transaction_type: undefined,
-                start_date: undefined,
-                end_date: undefined,
-                search: undefined,
-              })}
+              onClick={() => {
+                setFilters({
+                  account_id: undefined,
+                  category_id: undefined,
+                  transaction_type: undefined,
+                  start_date: undefined,
+                  end_date: undefined,
+                  search: undefined,
+                  merchant_name: undefined,
+                });
+                setCurrentPage(1);
+              }}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
             >
               Clear Filters
@@ -524,7 +564,7 @@ export const TransactionsPage: React.FC = () => {
               ))}
               {transactions.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                     <p className="text-lg font-medium mb-1">No transactions found</p>
                     <p className="text-sm">Upload a bank statement to get started.</p>
                   </td>
@@ -532,6 +572,29 @@ export const TransactionsPage: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+        
+        {/* Pagination */}
+        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+          <div className="text-sm text-gray-500">
+            Showing <span className="font-medium">{Math.min((currentPage - 1) * limit + 1, totalTransactions)}</span> to <span className="font-medium">{Math.min(currentPage * limit, totalTransactions)}</span> of <span className="font-medium">{totalTransactions}</span> results
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setCurrentPage(p => p + 1)}
+              disabled={currentPage * limit >= totalTransactions}
+              className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

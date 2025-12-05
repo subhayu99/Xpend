@@ -227,25 +227,22 @@ def get_top_merchants(
     db: Session = Depends(get_session)
 ):
     """Get top merchants by spending"""
-    # Aggregate by merchant name
+    # Aggregate by merchant name (or description if null)
+    merchant_col = func.coalesce(Transaction.merchant_name, Transaction.description).label("merchant")
+    
     results = db.exec(
-        select(Transaction.merchant_name, func.sum(Transaction.amount).label("total"))
+        select(merchant_col, func.sum(Transaction.amount).label("total"))
         .where(
             Transaction.user_id == current_user.id,
-            Transaction.transaction_type == 'expense',
-            Transaction.merchant_name != None
+            Transaction.transaction_type == 'expense'
         )
-        .group_by(Transaction.merchant_name)
-        .order_by(desc("total")) # Expenses are negative, so sum is negative. We want largest absolute value.
-        # Actually, if expenses are negative, sum is negative. 
-        # To get "top spending", we want the most negative values (smallest numbers).
-        # So order by total ASC (e.g. -5000 before -100)
+        .group_by(merchant_col)
         .order_by(func.sum(Transaction.amount).asc())
         .limit(limit)
     ).all()
     
     return [
-        {"merchant": r[0], "amount": abs(r[1])}
+        {"merchant": r[0] or "Unknown", "amount": abs(r[1])}
         for r in results
     ]
 

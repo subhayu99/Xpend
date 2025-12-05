@@ -19,6 +19,15 @@ export const RecurringPage: React.FC = () => {
     next_expected_date: '',
   });
 
+  // Manual Rule State
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newRule, setNewRule] = useState({
+    merchant_name: '',
+    expected_amount: 0,
+    interval: 'Monthly',
+    next_expected_date: new Date().toISOString().split('T')[0],
+  });
+
   useEffect(() => {
     loadData();
   }, []);
@@ -60,6 +69,34 @@ export const RecurringPage: React.FC = () => {
       loadData();
     } catch (error) {
       console.error('Failed to confirm recurring:', error);
+    }
+  };
+
+  const handleCreateManual = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await analyticsService.confirmRecurring({
+        merchant_name: newRule.merchant_name,
+        expected_amount: newRule.expected_amount,
+        amount_min: newRule.expected_amount,
+        amount_max: newRule.expected_amount,
+        is_variable_amount: false,
+        interval: newRule.interval,
+        avg_days: 30, // Default
+        confidence: 1.0,
+        transaction_count: 0,
+        next_expected_date: newRule.next_expected_date,
+      });
+      setShowAddForm(false);
+      setNewRule({
+        merchant_name: '',
+        expected_amount: 0,
+        interval: 'Monthly',
+        next_expected_date: new Date().toISOString().split('T')[0],
+      });
+      loadData();
+    } catch (error) {
+      console.error('Failed to create recurring rule:', error);
     }
   };
 
@@ -153,13 +190,91 @@ export const RecurringPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Recurring Subscriptions & Bills</h1>
-        <button onClick={loadData} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium flex items-center gap-2">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          Refresh
-        </button>
+        <div className="flex gap-2">
+            <button 
+                onClick={() => setShowAddForm(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium flex items-center gap-2"
+            >
+                <span>+</span> Add Manual Rule
+            </button>
+            <button onClick={loadData} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+            </button>
+        </div>
       </div>
+
+      {showAddForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 text-gray-900">Add Recurring Rule</h2>
+            <form onSubmit={handleCreateManual} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Merchant Name</label>
+                <input
+                  type="text"
+                  value={newRule.merchant_name}
+                  onChange={e => setNewRule({...newRule, merchant_name: e.target.value})}
+                  className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500"
+                  required
+                  placeholder="e.g. Netflix"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Expected Amount</label>
+                <input
+                  type="number"
+                  value={newRule.expected_amount}
+                  onChange={e => setNewRule({...newRule, expected_amount: parseFloat(e.target.value)})}
+                  className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
+                <select
+                  value={newRule.interval}
+                  onChange={e => setNewRule({...newRule, interval: e.target.value})}
+                  className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option value="Weekly">Weekly</option>
+                  <option value="Bi-weekly">Bi-weekly</option>
+                  <option value="Monthly">Monthly</option>
+                  <option value="Quarterly">Quarterly</option>
+                  <option value="Yearly">Yearly</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Next Due Date</label>
+                <input
+                  type="date"
+                  value={newRule.next_expected_date}
+                  onChange={e => setNewRule({...newRule, next_expected_date: e.target.value})}
+                  className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500"
+                  required
+                />
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(false)}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
+                >
+                  Create Rule
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

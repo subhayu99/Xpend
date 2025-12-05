@@ -90,7 +90,7 @@ def get_dashboard_data(
     # 4. Category Spend (Current Month)
     # Group by category
     category_stats = db.exec(
-        select(Category.name, Category.color, func.sum(Transaction.amount))
+        select(Category.id, Category.name, Category.color, func.sum(Transaction.amount))
         .join(Category, isouter=True)
         .join(Account)
         .where(
@@ -99,12 +99,13 @@ def get_dashboard_data(
             Transaction.transaction_date < start_of_next_month,
             Transaction.transaction_type == "expense"
         )
-        .group_by(Category.name, Category.color)
+        .group_by(Category.id, Category.name, Category.color)
     ).all()
     
     category_spend = []
-    for name, color, amount in category_stats:
+    for cat_id, name, color, amount in category_stats:
         category_spend.append(CategorySpend(
+            category_id=cat_id,
             category_name=name or "Uncategorized",
             amount=abs(amount or 0.0),
             color=color
@@ -114,54 +115,46 @@ def get_dashboard_data(
     category_spend.sort(key=lambda x: x.amount, reverse=True)
         
     # 5. Monthly Trend (Last 6 months)
-    # This is a bit more complex SQL, let's do a simple loop for last 6 months
     monthly_trend = []
+    
+    # Generate last 6 month keys
+    month_keys = []
     for i in range(5, -1, -1):
-        # Calculate start and end of that month
-        # Logic to subtract months...
-        # Simplified: Just take current month data for now or mock previous if empty?
-        # Let's implement proper logic
+        # Manual year/month math to be precise
+        year = today.year
+        month = today.month - i
+        while month <= 0:
+            month += 12
+            year -= 1
+        month_keys.append(f"{year}-{month:02d}")
         
-        # Calculate date for 'i' months ago
-        curr_month_start = datetime(today.year, today.month, 1)
-        # Go back i months
-        # ... logic ...
-        pass
-        
-    # Re-implementing trend logic simpler:
-    # Just fetch all transactions for last 6 months and aggregate in python
-    six_months_ago = start_of_month - timedelta(days=30*6) # Approx
+    # Fetch transactions for this range
+    start_year = int(month_keys[0].split('-')[0])
+    start_month = int(month_keys[0].split('-')[1])
+    trend_start_date = datetime(start_year, start_month, 1)
     
     trend_txs = db.exec(
         select(Transaction)
         .join(Account)
         .where(
             Account.user_id == current_user.id,
-            Transaction.transaction_date >= six_months_ago
+            Transaction.transaction_date >= trend_start_date
         )
     ).all()
     
-    # Aggregate in python
-    trend_map = {} # "YYYY-MM" -> {income: 0, expense: 0}
+    trend_map = {k: {"income": 0.0, "expense": 0.0} for k in month_keys}
     
     for tx in trend_txs:
         month_key = tx.transaction_date.strftime("%Y-%m")
-        if month_key not in trend_map:
-            trend_map[month_key] = {"income": 0.0, "expense": 0.0}
-            
-        if tx.transaction_type == "income":
-            trend_map[month_key]["income"] += abs(tx.amount)
-        else:
-            trend_map[month_key]["expense"] += abs(tx.amount)
-            
-    # Convert to list and sort
-    sorted_months = sorted(trend_map.keys())
-    # Take last 6
-    sorted_months = sorted_months[-6:]
-    
+        if month_key in trend_map:
+             if tx.transaction_type == "income":
+                trend_map[month_key]["income"] += abs(tx.amount)
+             else:
+                trend_map[month_key]["expense"] += abs(tx.amount)
+                
     monthly_trend = [
         MonthlyTrend(month=m, income=trend_map[m]["income"], expense=trend_map[m]["expense"])
-        for m in sorted_months
+        for m in month_keys
     ]
     
     

@@ -38,3 +38,10 @@ class TransactionResponse(TransactionBase):
     
     class Config:
         from_attributes = True
+
+class TransactionListResponse(BaseModel):
+    """Paginated transaction list response"""
+    items: list[TransactionResponse]
+    total: int
+    page: int
+    limit: int

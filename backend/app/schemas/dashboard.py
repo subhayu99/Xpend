@@ -10,6 +10,7 @@ class DashboardSummary(BaseModel):
     savings_rate: float
 
 class CategorySpend(BaseModel):
+    category_id: Any | None = None # Using Any to avoid import issues if UUID not imported, but better to import it.
     category_name: str
     amount: float
     color: str | None = None
